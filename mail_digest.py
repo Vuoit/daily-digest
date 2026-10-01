@@ -23,6 +23,7 @@ import os
 import re
 import ssl
 import sys
+import threading
 import webbrowser
 from email import policy
 from email.utils import parseaddr, parsedate_to_datetime
@@ -141,21 +142,31 @@ def cmd_add(cfg):
 
 def cmd_remove(cfg, addr):
     addr = addr.lower()
-    before = len(cfg["accounts"])
-    cfg["accounts"] = [a for a in cfg["accounts"] if a["email"] != addr]
-    if len(cfg["accounts"]) == before:
+    acct = next((a for a in cfg["accounts"] if a["email"] == addr), None)
+    if not acct:
         sys.exit(f"{addr} isn't set up.")
+    cfg["accounts"].remove(acct)
     try:
         keyring.delete_password(APP, addr)
     except keyring.errors.PasswordDeleteError:
         pass
+    if acct["auth"] == "oauth" and cfg.get("outlook_client_id"):
+        with ms_lock:  # forget the Outlook sign-in too
+            app, cache = ms_app(cfg["outlook_client_id"])
+            for account in app.get_accounts(username=addr):
+                app.remove_account(account)
+            save_ms_cache(cache)
     save_config(cfg)
     print(f"Removed {addr}.")
 
 
 # ---------------------------------------------------------------- sign-in
 
-def outlook_token(client_id, addr, interactive=False):
+# The app checks accounts in parallel, and all Outlook accounts share one token file.
+ms_lock = threading.Lock()
+
+
+def ms_app(client_id):
     import msal
 
     cache = msal.SerializableTokenCache()
@@ -165,26 +176,37 @@ def outlook_token(client_id, addr, interactive=False):
         client_id,
         authority="https://login.microsoftonline.com/consumers",
         token_cache=cache,
+        timeout=30,  # msal ignores socket.setdefaulttimeout and would otherwise wait forever
     )
-    result = None
-    for account in app.get_accounts(username=addr):
-        result = app.acquire_token_silent(MS_SCOPES, account=account)
-        if result:
-            break
-    if not result:
-        if not interactive:
-            raise RuntimeError("Outlook sign-in expired; run `add` again for this account")
-        flow = app.initiate_device_flow(scopes=MS_SCOPES)
-        if "user_code" not in flow:
-            raise RuntimeError(flow.get("error_description", "couldn't start sign-in"))
-        print("\n" + flow["message"] + "\n")
-        result = app.acquire_token_by_device_flow(flow)
-    if "access_token" not in result:
-        raise RuntimeError(result.get("error_description", "Outlook sign-in failed"))
+    return app, cache
+
+
+def save_ms_cache(cache):
     if cache.has_state_changed:
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         MS_CACHE_FILE.write_text(cache.serialize(), encoding="utf-8")
-    return result["access_token"]
+
+
+def outlook_token(client_id, addr, interactive=False):
+    with ms_lock:
+        app, cache = ms_app(client_id)
+        result = None
+        for account in app.get_accounts(username=addr):
+            result = app.acquire_token_silent(MS_SCOPES, account=account)
+            if result:
+                break
+        if not result:
+            if not interactive:
+                raise RuntimeError("Outlook sign-in expired; run `add` again for this account")
+            flow = app.initiate_device_flow(scopes=MS_SCOPES)
+            if "user_code" not in flow:
+                raise RuntimeError(flow.get("error_description", "couldn't start sign-in"))
+            print("\n" + flow["message"] + "\n")
+            result = app.acquire_token_by_device_flow(flow)
+        if "access_token" not in result:
+            raise RuntimeError(result.get("error_description", "Outlook sign-in failed"))
+        save_ms_cache(cache)
+        return result["access_token"]
 
 
 def connect(acct, cfg):
