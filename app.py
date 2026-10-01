@@ -38,6 +38,7 @@ NEWS_SCRIPT = HERE / "news_digest.py"
 # %APPDATA% on Windows; elsewhere a hidden folder, so it can't land inside a clone at ~/daily-digest.
 STATE_DIR = Path(os.environ["APPDATA"]) / "daily-digest" if "APPDATA" in os.environ else Path.home() / ".daily-digest"
 PORT_FILE = STATE_DIR / "port"
+PING_REPLY = f"daily-digest {HERE}"  # names this copy's folder, so a copy elsewhere isn't mistaken for it
 
 MAIL_DAYS = 14
 NEWS_HOURS = 48
@@ -195,7 +196,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/":
             self.send(SHELL)
         elif path == "/ping":
-            self.send("daily-digest", "text/plain")
+            self.send(PING_REPLY, "text/plain")
         elif path == "/status":
             last_seen = time.monotonic()
             self.send(json.dumps({k: t.status() for k, t in TABS.items()}), "application/json")
@@ -218,11 +219,11 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def running_port():
-    """Port of an already-running copy of the app, if there is one."""
+    """Port of an already-running copy of the app from this same folder, if there is one."""
     try:
         port = int(PORT_FILE.read_text())
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/ping", timeout=2) as r:
-            if r.read() == b"daily-digest":
+            if r.read().decode("utf-8") == PING_REPLY:
                 return port
     except Exception:  # noqa: BLE001
         pass
@@ -256,6 +257,7 @@ def background_loop(server):
 def main():
     port = running_port()
     if port:  # already open somewhere: just show another window
+        print(f"Already running at http://127.0.0.1:{port}/ - opening another window.")
         open_window(port)
         return
 
@@ -274,7 +276,11 @@ def main():
     try:
         server.serve_forever()
     finally:
-        PORT_FILE.unlink(missing_ok=True)
+        try:  # leave it alone if a copy from another folder has taken over since
+            if PORT_FILE.read_text() == str(port):
+                PORT_FILE.unlink()
+        except OSError:
+            pass
 
 
 # ---------------------------------------------------------------- shell page
