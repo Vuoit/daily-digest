@@ -38,6 +38,8 @@ NEWS_SCRIPT = HERE / "news_digest.py"
 # %APPDATA% on Windows; elsewhere a hidden folder, so it can't land inside a clone at ~/daily-digest.
 STATE_DIR = Path(os.environ["APPDATA"]) / "daily-digest" if "APPDATA" in os.environ else Path.home() / ".daily-digest"
 PORT_FILE = STATE_DIR / "port"
+# The mail page lists your mail, so mail_digest.py keeps it next to its settings (its OUTPUT_FILE).
+MAIL_PAGE = Path(os.environ.get("APPDATA", Path.home())) / "mail-digest" / "digest.html"
 PING_REPLY = f"daily-digest {HERE}"  # names this copy's folder, so a copy elsewhere isn't mistaken for it
 
 MAIL_DAYS = 14
@@ -101,7 +103,7 @@ def build_mail():
     items = mail.dedupe([i for got, _ in results for i in got])
     errors = [err for _, err in results if err]
     page = mail.render(items, errors, cfg["accounts"], MAIL_DAYS)
-    mail.OUTPUT_FILE.write_text(page, encoding="utf-8")
+    mail.save_digest(page)
     return page
 
 
@@ -162,7 +164,7 @@ class Tab:
 
 
 TABS = {
-    "mail": Tab("mail", build_mail, MAIL_SCRIPT.parent / "digest.html", DARK_MAIL),
+    "mail": Tab("mail", build_mail, MAIL_PAGE, DARK_MAIL),
     "news": Tab("news", build_news, NEWS_SCRIPT.parent / "news.html", EMBED_NEWS),
 }
 last_seen = time.monotonic()

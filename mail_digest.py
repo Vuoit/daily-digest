@@ -36,7 +36,8 @@ APP = "mail-digest"
 CONFIG_DIR = Path(os.environ.get("APPDATA", Path.home())) / APP
 ACCOUNTS_FILE = CONFIG_DIR / "accounts.json"
 MS_CACHE_FILE = CONFIG_DIR / "ms_token_cache.json"
-OUTPUT_FILE = Path(__file__).resolve().parent / "digest.html"
+OUTPUT_FILE = CONFIG_DIR / "digest.html"  # it lists your mail, so it stays out of the app folder
+LEGACY_OUTPUT = Path(__file__).resolve().parent / "digest.html"  # where older versions wrote it
 
 MAX_PER_ACCOUNT = 300          # newest N unread messages per account
 MAX_BODY_BYTES = 1_500_000     # skip downloading bigger messages (attachments)
@@ -459,6 +460,13 @@ section:first-of-type .item {{ border-left:3px solid var(--accent); }}
 </main></body></html>"""
 
 
+def save_digest(page):
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    OUTPUT_FILE.write_text(page, encoding="utf-8")
+    if LEGACY_OUTPUT != OUTPUT_FILE:  # don't leave an old copy of your mail in the app folder
+        LEGACY_OUTPUT.unlink(missing_ok=True)
+
+
 # ---------------------------------------------------------------- main
 
 def cmd_run(cfg, days, include_all, open_browser):
@@ -475,7 +483,7 @@ def cmd_run(cfg, days, include_all, open_browser):
             errors.append((acct["email"], str(e)))
             print(f"failed ({e})")
     items = dedupe(items)
-    OUTPUT_FILE.write_text(render(items, errors, cfg["accounts"], days), encoding="utf-8")
+    save_digest(render(items, errors, cfg["accounts"], days))
     print(f"\nDigest written to {OUTPUT_FILE}")
     if open_browser:
         webbrowser.open(OUTPUT_FILE.as_uri())
