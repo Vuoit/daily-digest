@@ -11,6 +11,7 @@ The server stops by itself a few minutes after you close the window.
 """
 
 import datetime as dt
+import html
 import importlib.util
 import json
 import os
@@ -102,6 +103,8 @@ def build_mail():
         results = list(pool.map(one, cfg["accounts"]))
     items = mail.dedupe([i for got, _ in results for i in got])
     errors = [err for _, err in results if err]
+    if len(errors) == len(cfg["accounts"]):  # nothing worked (offline?): keep the last good page
+        raise RuntimeError("couldn't check any account. " + "; ".join(f"{a}: {m}" for a, m in errors))
     page = mail.render(items, errors, cfg["accounts"], MAIL_DAYS)
     mail.save_digest(page)
     return page
@@ -114,7 +117,10 @@ def build_news():
         b = pool.submit(news.fetch_stocks)
         c = pool.submit(news.fetch_crypto)
         (stories, e1), (stocks, e2), (crypto, e3) = a.result(), b.result(), c.result()
-    page = news.render(stories, stocks, crypto, e1 + e2 + e3, NEWS_HOURS)
+    errors = e1 + e2 + e3
+    if errors and not (stories or stocks or crypto):  # nothing worked (offline?): keep the last good page
+        raise RuntimeError(f"couldn't reach any news or price site. {errors[0][0]}: {errors[0][1]}")
+    page = news.render(stories, stocks, crypto, errors, NEWS_HOURS)
     news.OUTPUT_FILE.write_text(page, encoding="utf-8")
     return page
 
@@ -143,18 +149,18 @@ class Tab:
             self.html = self.builder()
             self.updated = dt.datetime.now().astimezone()
             self.error = None
+            self.version += 1  # only a new page counts, so a failed refresh doesn't show "New updates"
             print(f"  {self.name} done")
         except Exception as e:  # noqa: BLE001
             self.error = str(e)
             traceback.print_exc()
         finally:
-            self.version += 1
             self.last_try = time.monotonic()
             self.building = False
 
     def page(self):
         if self.html is None:
-            return message_page(f"Couldn't load {self.name}", f"<p>{self.error}</p>") if self.error else ""
+            return message_page(f"Couldn't load {self.name}", f"<p>{html.escape(self.error)}</p>") if self.error else ""
         return self.html.replace("</head>", self.extra_css + "</head>", 1)
 
     def status(self):
@@ -389,6 +395,7 @@ function draw() {
   document.getElementById("loading-text").textContent = s.error ? "Couldn't load: " + s.error : WAIT[active];
   const stamp = document.getElementById("stamp");
   stamp.classList.toggle("err", !!s.error);
+  stamp.title = s.error || "";  // the last good page stays up, so hovering is where you see why
   stamp.textContent = s.building ? "Refreshing…" : s.error ? "Last refresh failed"
                     : s.updated ? "Updated " + ago(s.updated) : "";
   const r = document.getElementById("refresh");
