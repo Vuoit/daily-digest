@@ -326,6 +326,7 @@ def render(stories, stocks, crypto, errors, hours):
         --accent:#9d85ff; --accent-soft:#241f3d; --up:#3ddc84; --down:#ff6b6b;
         --up-soft:#133222; --down-soft:#3a1a1a; --err:#3a1f1c; --shadow:none; }}
 * {{ box-sizing:border-box; }}
+[hidden] {{ display:none !important; }}  /* .story and .more set display, which would beat hidden */
 body {{ margin:0; background:var(--bg); color:var(--text);
        font:15px/1.45 "Segoe UI", system-ui, sans-serif; }}
 header {{ position:sticky; top:0; z-index:5; background:color-mix(in srgb, var(--bg) 85%, transparent);
