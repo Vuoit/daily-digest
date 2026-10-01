@@ -318,6 +318,9 @@ def to_item(account, raw, has_body):
         date = parsedate_to_datetime(str(msg.get("Date")))
         if date.tzinfo is None:
             date = date.replace(tzinfo=dt.timezone.utc)
+        # Convert to local time here, so a date Windows can't handle (before 1970, or far in
+        # the future, as some spam has) counts as no date instead of breaking the whole page.
+        date = date.astimezone()
     except Exception:  # noqa: BLE001
         date = None
 
@@ -358,8 +361,7 @@ def dedupe(items):
 def fmt_date(d):
     if not d:
         return ""
-    local = d.astimezone()
-    return local.strftime("%a %b ") + str(local.day) + local.strftime(", %I:%M %p").replace(" 0", " ")
+    return d.strftime("%a %b ") + str(d.day) + d.strftime(", %I:%M %p").replace(" 0", " ")
 
 
 def render_item(it):
