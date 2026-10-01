@@ -26,6 +26,9 @@ from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+# Without this, one stuck mail or news connection hangs its tab on "Refreshing…" for good.
+socket.setdefaulttimeout(60)
+
 if sys.stdout is None:  # pythonw has no console; keep print() from crashing
     sys.stdout = sys.stderr = open(os.devnull, "w")
 
@@ -53,6 +56,8 @@ EMBED_NEWS = "<style>.bar h1, .stamp { display:none; }</style>"  # the app's own
 
 
 def load(name, path):
+    if not path.exists():
+        raise FileNotFoundError(f"{path} is missing. Keep the {path.parent.name} folder next to this one.")
     spec = importlib.util.spec_from_file_location(name, path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -110,6 +115,7 @@ class Tab:
         self.lock = threading.Lock()
         self.html, self.updated, self.error = None, None, None
         self.building, self.version = False, 0
+        self.last_try = None  # when the last build finished, whether it worked or not
         if cache_file.exists():  # show the last result straight away while refreshing
             self.html = cache_file.read_text(encoding="utf-8")
             self.updated = dt.datetime.fromtimestamp(cache_file.stat().st_mtime).astimezone()
@@ -133,6 +139,7 @@ class Tab:
             traceback.print_exc()
         finally:
             self.version += 1
+            self.last_try = time.monotonic()
             self.building = False
 
     def page(self):
@@ -233,7 +240,9 @@ def background_loop(server):
             server.shutdown()
             return
         for tab in TABS.values():
-            if tab.updated and (dt.datetime.now().astimezone() - tab.updated).total_seconds() > AUTO_REFRESH_MIN * 60:
+            # Count from the last attempt, not the last success, so a failing tab
+            # waits the full interval before trying again.
+            if tab.last_try is not None and time.monotonic() - tab.last_try > AUTO_REFRESH_MIN * 60:
                 tab.refresh()
 
 
@@ -404,9 +413,14 @@ document.getElementById("refresh").onclick = async () => {
   poll();
 };
 document.getElementById("new").onclick = () => { load(active); draw(); };
-document.addEventListener("keydown", e => {
+function onKey(e) {
   if (e.key === "F5" || (e.ctrlKey && e.key === "r")) { e.preventDefault(); document.getElementById("refresh").click(); }
-});
+}
+document.addEventListener("keydown", onKey);
+// After a click inside a tab, keys go to its frame instead of this page, so listen there too.
+TABS.forEach(t => document.getElementById("f-" + t).addEventListener("load", e => {
+  try { e.target.contentDocument.addEventListener("keydown", onKey); } catch (err) {}
+}));
 poll();
 setInterval(poll, 3000);
 </script>
