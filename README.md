@@ -13,8 +13,10 @@ Your mail and your news in one dark-mode window.
 You need [Python](https://www.python.org/downloads/) 3.9 or newer. On Windows, tick
 "Add python.exe to PATH" in the installer.
 
-1. Download this repository (green **Code** button > **Download ZIP**, then unzip it), or
-   `git clone` it.
+1. Download the ZIP from the [latest release](https://github.com/Vuoit/daily-digest/releases/latest)
+   (or green **Code** button > **Download ZIP**), or `git clone` this repository.
+   **Unzip it first:** right-click the ZIP > **Extract All**. Opening `app.py` straight from
+   inside the ZIP won't work, because Windows copies only that one file out.
 2. Open a terminal in that folder and install the two libraries the mail tab uses:
 
    ```
