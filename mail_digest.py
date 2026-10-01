@@ -21,6 +21,7 @@ import imaplib
 import json
 import os
 import re
+import ssl
 import sys
 import webbrowser
 from email import policy
@@ -186,7 +187,9 @@ def outlook_token(client_id, addr, interactive=False):
 
 
 def connect(acct, cfg):
-    imap = imaplib.IMAP4_SSL(acct["host"], timeout=60)
+    # imaplib skips the certificate check unless it's given a context. Without one, anyone
+    # on the same Wi-Fi could pose as the mail server and receive your password.
+    imap = imaplib.IMAP4_SSL(acct["host"], timeout=60, ssl_context=ssl.create_default_context())
     if acct["auth"] == "oauth":
         token = outlook_token(cfg["outlook_client_id"], acct["email"])
         auth = f"user={acct['email']}\x01auth=Bearer {token}\x01\x01".encode()

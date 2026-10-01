@@ -128,13 +128,14 @@ def parse_feed(source, raw):
         summary = it.findtext("atom:summary", "", NS) or it.findtext("atom:content", "", NS)
         stories.append({
             "title": strip_html(it.findtext("atom:title", "", NS)),
-            "link": link.get("href", "") if link is not None else "",
+            "link": link.get("href", "").strip() if link is not None else "",
             "date": parse_date(it.findtext("atom:published", "", NS)
                                or it.findtext("atom:updated", "", NS)),
             "summary": clip(strip_html(summary)),
             "image": find_image(it, summary),
         })
-    stories = [s for s in stories if s["title"] and s["link"]]
+    # Web links only: a javascript: link would run inside the app, where it could read your mail tab.
+    stories = [s for s in stories if s["title"] and s["link"].lower().startswith(("http://", "https://"))]
     for s in stories:
         s["source"] = source
     stories.sort(key=lambda s: s["date"] or dt.datetime.min.replace(tzinfo=dt.timezone.utc),
