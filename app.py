@@ -5,8 +5,8 @@ Usage:
     python app.py       # same, but with a console showing progress
 
 It runs a small server on this computer only (127.0.0.1) and opens it in an
-Edge app window. The mail and news code live in their own folders next to this
-one and are loaded from there, so both scripts still work on their own.
+Edge app window. The mail and news code live in mail_digest.py and
+news_digest.py next to this file, and both scripts still work on their own.
 The server stops by itself a few minutes after you close the window.
 """
 
@@ -33,9 +33,10 @@ if sys.stdout is None:  # pythonw has no console; keep print() from crashing
     sys.stdout = sys.stderr = open(os.devnull, "w")
 
 HERE = Path(__file__).resolve().parent
-MAIL_SCRIPT = HERE.parent / "Mail Digest" / "mail_digest.py"
-NEWS_SCRIPT = HERE.parent / "News Digest" / "news_digest.py"
-STATE_DIR = Path(os.environ.get("APPDATA", Path.home())) / "daily-digest"
+MAIL_SCRIPT = HERE / "mail_digest.py"
+NEWS_SCRIPT = HERE / "news_digest.py"
+# %APPDATA% on Windows; elsewhere a hidden folder, so it can't land inside a clone at ~/daily-digest.
+STATE_DIR = Path(os.environ["APPDATA"]) / "daily-digest" if "APPDATA" in os.environ else Path.home() / ".daily-digest"
 PORT_FILE = STATE_DIR / "port"
 
 MAIL_DAYS = 14
@@ -57,7 +58,7 @@ EMBED_NEWS = "<style>.bar h1, .stamp { display:none; }</style>"  # the app's own
 
 def load(name, path):
     if not path.exists():
-        raise FileNotFoundError(f"{path} is missing. Keep the {path.parent.name} folder next to this one.")
+        raise FileNotFoundError(f"{path} is missing. Download the whole repository, not just app.py.")
     spec = importlib.util.spec_from_file_location(name, path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -79,7 +80,7 @@ def build_mail():
     cfg = mail.load_config()
     if not cfg["accounts"]:
         return message_page("No mail accounts yet",
-                            f"<p>Add one from a terminal in <code>{MAIL_SCRIPT.parent}</code>:</p>"
+                            f"<p>Add one from a terminal in <code>{HERE}</code>:</p>"
                             "<p><code>python mail_digest.py add</code></p><p>Then press Refresh.</p>")
 
     def one(acct):

@@ -1,3 +1,7 @@
 __pycache__/
 *.pyc
 .venv/
+
+# Generated pages. digest.html holds your unread mail, so never commit it.
+digest.html
+news.html
