@@ -117,7 +117,9 @@ def cmd_add(cfg):
         if provider in APP_PASSWORD_HELP:
             print(f"\n{provider.title()} needs an app password, not your normal one.")
             print(f"Create one here: {APP_PASSWORD_HELP[provider]}\n")
-        secret = getpass("App password (hidden as you type): ").replace(" ", "")
+        secret = getpass("App password (hidden as you type): ")
+        if provider == "gmail":  # Google shows app passwords in groups of four; other passwords may contain spaces
+            secret = secret.replace(" ", "")
         keyring.set_password(APP, addr, secret)
     else:
         if not cfg.get("outlook_client_id"):
