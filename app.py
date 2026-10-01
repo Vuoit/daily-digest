@@ -58,10 +58,16 @@ EMBED_NEWS = "<style>.bar h1, .stamp { display:none; }</style>"  # the app's own
 
 def load(name, path):
     if not path.exists():
+        if ".zip" in str(HERE).lower():  # Explorer runs a file from inside a ZIP by copying just that file to Temp
+            raise FileNotFoundError("app.py was opened from inside the ZIP, so the files next to it aren't there. "
+                                    "Right-click the ZIP, choose Extract All, then run app.py from the extracted folder.")
         raise FileNotFoundError(f"{path} is missing. Download the whole repository, not just app.py.")
     spec = importlib.util.spec_from_file_location(name, path)
     mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
+    try:
+        spec.loader.exec_module(mod)
+    except ModuleNotFoundError as e:
+        raise ModuleNotFoundError(f"{e}. In a terminal in {HERE}, run: pip install -r requirements.txt") from e
     return mod
 
 
