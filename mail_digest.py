@@ -21,7 +21,9 @@ import imaplib
 import json
 import os
 import re
+import ssl
 import sys
+import threading
 import webbrowser
 from email import policy
 from email.utils import parseaddr, parsedate_to_datetime
@@ -35,7 +37,8 @@ APP = "mail-digest"
 CONFIG_DIR = Path(os.environ.get("APPDATA", Path.home())) / APP
 ACCOUNTS_FILE = CONFIG_DIR / "accounts.json"
 MS_CACHE_FILE = CONFIG_DIR / "ms_token_cache.json"
-OUTPUT_FILE = Path(__file__).resolve().parent / "digest.html"
+OUTPUT_FILE = CONFIG_DIR / "digest.html"  # it lists your mail, so it stays out of the app folder
+LEGACY_OUTPUT = Path(__file__).resolve().parent / "digest.html"  # where older versions wrote it
 
 MAX_PER_ACCOUNT = 300          # newest N unread messages per account
 MAX_BODY_BYTES = 1_500_000     # skip downloading bigger messages (attachments)
@@ -114,7 +117,9 @@ def cmd_add(cfg):
         if provider in APP_PASSWORD_HELP:
             print(f"\n{provider.title()} needs an app password, not your normal one.")
             print(f"Create one here: {APP_PASSWORD_HELP[provider]}\n")
-        secret = getpass("App password (hidden as you type): ").replace(" ", "")
+        secret = getpass("App password (hidden as you type): ")
+        if provider == "gmail":  # Google shows app passwords in groups of four; other passwords may contain spaces
+            secret = secret.replace(" ", "")
         keyring.set_password(APP, addr, secret)
     else:
         if not cfg.get("outlook_client_id"):
@@ -139,21 +144,31 @@ def cmd_add(cfg):
 
 def cmd_remove(cfg, addr):
     addr = addr.lower()
-    before = len(cfg["accounts"])
-    cfg["accounts"] = [a for a in cfg["accounts"] if a["email"] != addr]
-    if len(cfg["accounts"]) == before:
+    acct = next((a for a in cfg["accounts"] if a["email"] == addr), None)
+    if not acct:
         sys.exit(f"{addr} isn't set up.")
+    cfg["accounts"].remove(acct)
     try:
         keyring.delete_password(APP, addr)
     except keyring.errors.PasswordDeleteError:
         pass
+    if acct["auth"] == "oauth" and cfg.get("outlook_client_id"):
+        with ms_lock:  # forget the Outlook sign-in too
+            app, cache = ms_app(cfg["outlook_client_id"])
+            for account in app.get_accounts(username=addr):
+                app.remove_account(account)
+            save_ms_cache(cache)
     save_config(cfg)
     print(f"Removed {addr}.")
 
 
 # ---------------------------------------------------------------- sign-in
 
-def outlook_token(client_id, addr, interactive=False):
+# The app checks accounts in parallel, and all Outlook accounts share one token file.
+ms_lock = threading.Lock()
+
+
+def ms_app(client_id):
     import msal
 
     cache = msal.SerializableTokenCache()
@@ -163,30 +178,43 @@ def outlook_token(client_id, addr, interactive=False):
         client_id,
         authority="https://login.microsoftonline.com/consumers",
         token_cache=cache,
+        timeout=30,  # msal ignores socket.setdefaulttimeout and would otherwise wait forever
     )
-    result = None
-    for account in app.get_accounts(username=addr):
-        result = app.acquire_token_silent(MS_SCOPES, account=account)
-        if result:
-            break
-    if not result:
-        if not interactive:
-            raise RuntimeError("Outlook sign-in expired; run `add` again for this account")
-        flow = app.initiate_device_flow(scopes=MS_SCOPES)
-        if "user_code" not in flow:
-            raise RuntimeError(flow.get("error_description", "couldn't start sign-in"))
-        print("\n" + flow["message"] + "\n")
-        result = app.acquire_token_by_device_flow(flow)
-    if "access_token" not in result:
-        raise RuntimeError(result.get("error_description", "Outlook sign-in failed"))
+    return app, cache
+
+
+def save_ms_cache(cache):
     if cache.has_state_changed:
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         MS_CACHE_FILE.write_text(cache.serialize(), encoding="utf-8")
-    return result["access_token"]
+
+
+def outlook_token(client_id, addr, interactive=False):
+    with ms_lock:
+        app, cache = ms_app(client_id)
+        result = None
+        for account in app.get_accounts(username=addr):
+            result = app.acquire_token_silent(MS_SCOPES, account=account)
+            if result:
+                break
+        if not result:
+            if not interactive:
+                raise RuntimeError("Outlook sign-in expired; run `add` again for this account")
+            flow = app.initiate_device_flow(scopes=MS_SCOPES)
+            if "user_code" not in flow:
+                raise RuntimeError(flow.get("error_description", "couldn't start sign-in"))
+            print("\n" + flow["message"] + "\n")
+            result = app.acquire_token_by_device_flow(flow)
+        if "access_token" not in result:
+            raise RuntimeError(result.get("error_description", "Outlook sign-in failed"))
+        save_ms_cache(cache)
+        return result["access_token"]
 
 
 def connect(acct, cfg):
-    imap = imaplib.IMAP4_SSL(acct["host"], timeout=60)
+    # imaplib skips the certificate check unless it's given a context. Without one, anyone
+    # on the same Wi-Fi could pose as the mail server and receive your password.
+    imap = imaplib.IMAP4_SSL(acct["host"], timeout=60, ssl_context=ssl.create_default_context())
     if acct["auth"] == "oauth":
         token = outlook_token(cfg["outlook_client_id"], acct["email"])
         auth = f"user={acct['email']}\x01auth=Bearer {token}\x01\x01".encode()
@@ -315,6 +343,9 @@ def to_item(account, raw, has_body):
         date = parsedate_to_datetime(str(msg.get("Date")))
         if date.tzinfo is None:
             date = date.replace(tzinfo=dt.timezone.utc)
+        # Convert to local time here, so a date Windows can't handle (before 1970, or far in
+        # the future, as some spam has) counts as no date instead of breaking the whole page.
+        date = date.astimezone()
     except Exception:  # noqa: BLE001
         date = None
 
@@ -355,8 +386,7 @@ def dedupe(items):
 def fmt_date(d):
     if not d:
         return ""
-    local = d.astimezone()
-    return local.strftime("%a %b ") + str(local.day) + local.strftime(", %I:%M %p").replace(" 0", " ")
+    return d.strftime("%a %b ") + str(d.day) + d.strftime(", %I:%M %p").replace(" 0", " ")
 
 
 def render_item(it):
@@ -454,6 +484,13 @@ section:first-of-type .item {{ border-left:3px solid var(--accent); }}
 </main></body></html>"""
 
 
+def save_digest(page):
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    OUTPUT_FILE.write_text(page, encoding="utf-8")
+    if LEGACY_OUTPUT != OUTPUT_FILE:  # don't leave an old copy of your mail in the app folder
+        LEGACY_OUTPUT.unlink(missing_ok=True)
+
+
 # ---------------------------------------------------------------- main
 
 def cmd_run(cfg, days, include_all, open_browser):
@@ -470,7 +507,7 @@ def cmd_run(cfg, days, include_all, open_browser):
             errors.append((acct["email"], str(e)))
             print(f"failed ({e})")
     items = dedupe(items)
-    OUTPUT_FILE.write_text(render(items, errors, cfg["accounts"], days), encoding="utf-8")
+    save_digest(render(items, errors, cfg["accounts"], days))
     print(f"\nDigest written to {OUTPUT_FILE}")
     if open_browser:
         webbrowser.open(OUTPUT_FILE.as_uri())

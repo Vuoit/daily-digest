@@ -128,13 +128,14 @@ def parse_feed(source, raw):
         summary = it.findtext("atom:summary", "", NS) or it.findtext("atom:content", "", NS)
         stories.append({
             "title": strip_html(it.findtext("atom:title", "", NS)),
-            "link": link.get("href", "") if link is not None else "",
+            "link": link.get("href", "").strip() if link is not None else "",
             "date": parse_date(it.findtext("atom:published", "", NS)
                                or it.findtext("atom:updated", "", NS)),
             "summary": clip(strip_html(summary)),
             "image": find_image(it, summary),
         })
-    stories = [s for s in stories if s["title"] and s["link"]]
+    # Web links only: a javascript: link would run inside the app, where it could read your mail tab.
+    stories = [s for s in stories if s["title"] and s["link"].lower().startswith(("http://", "https://"))]
     for s in stories:
         s["source"] = source
     stories.sort(key=lambda s: s["date"] or dt.datetime.min.replace(tzinfo=dt.timezone.utc),
@@ -325,6 +326,7 @@ def render(stories, stocks, crypto, errors, hours):
         --accent:#9d85ff; --accent-soft:#241f3d; --up:#3ddc84; --down:#ff6b6b;
         --up-soft:#133222; --down-soft:#3a1a1a; --err:#3a1f1c; --shadow:none; }}
 * {{ box-sizing:border-box; }}
+[hidden] {{ display:none !important; }}  /* .story and .more set display, which would beat hidden */
 body {{ margin:0; background:var(--bg); color:var(--text);
        font:15px/1.45 "Segoe UI", system-ui, sans-serif; }}
 header {{ position:sticky; top:0; z-index:5; background:color-mix(in srgb, var(--bg) 85%, transparent);

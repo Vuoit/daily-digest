@@ -89,10 +89,10 @@ Nothing private is stored in this folder, so it's safe to share or commit:
 
 - App passwords go into your system's password store (Windows Credential Manager,
   macOS Keychain, or the Secret Service on Linux), never into a file.
-- The account list and the Outlook sign-in cache are kept in `%APPDATA%\mail-digest` on
-  Windows (`~/mail-digest` elsewhere).
-- The pages the app builds, `digest.html` (your unread mail) and `news.html`, are written
-  to this folder but listed in `.gitignore` so they're never committed.
+- The account list, the Outlook sign-in cache and `digest.html` (the page listing your
+  unread mail) are kept in `%APPDATA%\mail-digest` on Windows (`~/mail-digest` elsewhere).
+  Older versions wrote `digest.html` into this folder; the next mail refresh deletes that copy.
+- `news.html`, the news page, is written to this folder. It holds nothing personal.
 
 ## How it works
 
