@@ -1,0 +1,109 @@
+/* Styles for index.html */
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: Arial, Helvetica, sans-serif;
+  background: #f2f2f2;
+  color: #222;
+}
+
+/* Wrapper: holds the whole page and sets out the grid from the wireframe */
+#wrapper {
+  max-width: 1000px;
+  margin: 20px auto;
+  background: #fff;
+  border: 1px solid #ccc;
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  grid-template-areas:
+    "logo    nav"
+    "content images"
+    "footer  footer";
+}
+
+/* Logo (top left) */
+#logo {
+  grid-area: logo;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  border-right: 1px solid #ccc;
+  border-bottom: 1px solid #ccc;
+  font-size: 24px;
+  font-weight: bold;
+}
+
+#logo img { max-width: 100%; max-height: 80px; }
+
+/* Navigation bar (top right) */
+#nav {
+  grid-area: nav;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-bottom: 1px solid #ccc;
+}
+
+#nav ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  gap: 25px;
+}
+
+#nav a {
+  color: #222;
+  text-decoration: none;
+  font-weight: bold;
+}
+
+#nav a:hover { color: #1a73e8; }
+
+/* Text from client (left column) */
+#content {
+  grid-area: content;
+  padding: 20px;
+  border-right: 1px solid #ccc;
+}
+
+/* Two images stacked (right column) */
+#images { grid-area: images; }
+
+#images img {
+  display: block;
+  width: 100%;
+  height: 300px;
+  object-fit: cover;
+  background: #6cb4ee; /* blue box shows until you add your image */
+}
+
+#images img + img { border-top: 1px solid #ccc; }
+
+/* Footer (full width) */
+#footer {
+  grid-area: footer;
+  padding: 15px;
+  text-align: center;
+  background: #eee;
+  border-top: 1px solid #ccc;
+}
+
+/* Phones: stack everything in one column */
+@media (max-width: 700px) {
+  #wrapper {
+    margin: 0;
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "logo"
+      "nav"
+      "content"
+      "images"
+      "footer";
+  }
+  #logo, #content { border-right: none; }
+  #nav { padding: 15px; }
+}
